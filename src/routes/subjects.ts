@@ -4,6 +4,7 @@ import express from "express";
 import { db } from "../db/index.js";
 import { count } from "node:console";
 import { get } from "node:http";
+import { parse } from "node:path";
 
 const router = express.Router();
 
@@ -12,9 +13,11 @@ router.get("/", async (req, res) => {
   try {
     //req.query parameters is something like /subjects?search=math&departmentId=2&page=1&limit=10
     const { search, departmentName, page = 1, limit = 10 } = req.query;
-
-    const currentPage = Math.max(1, +page);
-    const limitPerPage = Math.max(1, +limit);
+    const currentPage = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitPerPage = Math.max(
+      1,
+      Math.min(parseInt(limit as string, 10) || 10, 100),
+    );
     // How many records to skip to next page
     const offset = (currentPage - 1) * limitPerPage;
 
@@ -28,12 +31,14 @@ router.get("/", async (req, res) => {
       );
     }
     if (departmentName) {
-      filterConditions.push(ilike(departments.name, `%${departmentName}%`));
+      const deptPattern = `%${String(departmentName).replace(/[%_]/g, "\\$&")}%`;
+      filterConditions.push(ilike(departments.name, deptPattern));
     }
 
     const whereClause =
       filterConditions.length > 0 ? and(...filterConditions) : undefined;
 
+    // Get total count for pagination in SQL -> Select count(distinct subjects.id) from subjects left join departments on subjects.departmentId = departments.id where (conditions)
     const countResult = await db
       .select({ count: sql<number>`count(distinct ${subjects.id})` })
       .from(subjects)
@@ -43,6 +48,8 @@ router.get("/", async (req, res) => {
 
     const totalCount = countResult[0]?.count || 0;
 
+    // Fetch subjects with pagination in SQL -> Select subjects.*, departments.* from subjects left join departments on subjects.departmentId = departments.id where (conditions) order by subjects.createdAt desc limit ? offset ?
+    //Offset here means how many records to skip
     const subjectList = await db
       .select({
         ...getTableColumns(subjects),
