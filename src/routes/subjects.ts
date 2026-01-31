@@ -31,6 +31,7 @@ router.get("/", async (req, res) => {
       );
     }
     if (departmentName) {
+      // Escape special characters % and _ in departmentName for ILIKE pattern
       const deptPattern = `%${String(departmentName).replace(/[%_]/g, "\\$&")}%`;
       filterConditions.push(ilike(departments.name, deptPattern));
     }
